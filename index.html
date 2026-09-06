@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Семейный праздник — игра с Яшей</title>
+<style>
+  :root { --bg: #fdf0e0; --card: #fffaf2; --ink: #5a3d2b; --warm: #ffd9a0;
+    --good: #66bb6a; --err: #e57373; --muted: #a08060; --vowel: #d32f2f; --cons: #1e5fa8; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; background: var(--bg); color: var(--ink); }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 12px; }
+  .card { background: var(--card); border-radius: 22px; padding: 18px; box-shadow: 0 4px 14px rgba(0,0,0,.06); margin-bottom: 14px; }
+  h1 { text-align: center; font-size: 26px; margin: 6px 0 4px; }
+  .sub { text-align: center; color: var(--muted); font-size: 14px; margin-bottom: 10px; }
+  .dialog { display: flex; gap: 12px; align-items: flex-start; background: #fdf3e3; border-radius: 16px; padding: 12px; margin-bottom: 12px; }
+  .avatar { width: 84px; height: 84px; border-radius: 50%; object-fit: cover; border: 3px solid var(--warm); flex-shrink: 0; }
+  .speech { font-size: 18px; line-height: 1.45; }
+  button { margin: 6px 4px; padding: 13px 20px; font-size: 19px; border: 2px solid #d9a05e; border-radius: 16px;
+    background: #ffe9cf; color: var(--ink); cursor: pointer; }
+  button:active { transform: scale(.97); }
+  button.good { background: #c8e6c9 !important; border-color: var(--good) !important; }
+  button.bad { background: #ffcdd2 !important; border-color: var(--err) !important; }
+  .heroes3 { display: flex; justify-content: center; gap: 10px; margin: 10px 0; }
+  .heroes3 img { width: 74px; height: 74px; border-radius: 50%; border: 3px solid var(--warm); object-fit: cover; }
+  .q { font-size: 21px; font-weight: bold; text-align: center; margin: 12px 4px; line-height: 1.4; }
+  .topline { display:flex; justify-content: space-between; font-size:15px; color: var(--muted); margin-bottom: 8px; }
+  .bar { height: 10px; background: #eed9ba; border-radius: 6px; overflow: hidden; margin: 4px 0 2px; }
+  .bar i { display:block; height:100%; width:0%; background: #f0a45c; transition: width .5s; }
+  .phase { text-align:center; font-weight:bold; color:#b07b3a; margin: 2px 0 6px; }
+  .singers { display:flex; flex-wrap:wrap; justify-content:center; gap:4px; margin:6px 0 12px; }
+  .singers span { font-size:16px; color:var(--vowel); background:#fdeaea; border:1px dashed #e0a0a0;
+    border-radius:10px; padding:2px 7px; font-weight:bold; }
+  .wordrow { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; margin:12px 0; }
+  .tile { width:64px; height:72px; background:#fff; border:3px solid #e8cfa8; border-radius:16px;
+    font-size:44px; font-weight:bold; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+  .tile.cons { color: var(--cons); }
+  .tile.vow { color: var(--vowel); }
+  .tile.caught { background:#fdeaea; border-color:var(--vowel); box-shadow:0 0 0 3px #f6c9c9; }
+  .emoji { font-size:44px; text-align:center; margin:2px 0; }
+  .fb { text-align:center; min-height:30px; font-size:18px; margin-top:6px; }
+  .nextw { text-align:center; }
+  .shake { animation: sh .4s; } @keyframes sh { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+  .stars { text-align:center; font-size:34px; margin:8px 0; letter-spacing:6px; }
+  .posl { font-size:24px; text-align:center; font-style:italic; font-weight:bold; margin:14px 8px; line-height:1.4; color:#7b4a2a; }
+  .confetti { position: fixed; font-size: 26px; pointer-events: none; z-index: 9; animation: conf .9s ease-out forwards; }
+  @keyframes conf { from { opacity:1; transform: translateY(0) rotate(0); } to { opacity:0; transform: translateY(-90px) rotate(220deg); } }
+  .buildline { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; min-height:58px; margin:10px 0;
+    padding:8px; background:#fdf6ec; border-radius:14px; border:2px dashed #e0c8a0; }
+  .buildline span { font-size:36px; font-weight:bold; line-height:1.1; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<script>
+const IMG = { yasha: "images/yasha.jpg", natasha: "images/natasha.jpg", balovashka: "images/balovashka.jpg" };
+const content = document.getElementById("app");
+const VOWELS = "АЕЁИОУЫЭЮЯ";
+const TOTAL = 12; /* загадка + 6 гласных + 5 слогов */
+
+/* ===== аудио ===== */
+const audioCache = {};
+let curKind = null, voiceTimers = [], lastGood = -1, lastBad = -1;
+function stopAll() { voiceTimers.forEach(clearTimeout); voiceTimers = [];
+  for (const k in audioCache) { try { audioCache[k].pause(); audioCache[k].currentTime = 0; } catch (e) {} } curKind = null; }
+function play(path, delay) {
+  const doPlay = () => { stopAll(); curKind = "v"; try {
+    if (!audioCache[path]) audioCache[path] = new Audio(path);
+    const a = audioCache[path]; a.onended = () => curKind = null; a.currentTime = 0;
+    const pr = a.play(); if (pr && pr.catch) pr.catch(() => curKind = null);
+  } catch (e) { curKind = null; } };
+  if (delay) { const id = setTimeout(() => { voiceTimers = voiceTimers.filter(t => t !== id); doPlay(); }, delay); voiceTimers.push(id); }
+  else { voiceTimers.forEach(clearTimeout); voiceTimers = []; doPlay(); }
+}
+function fx(p) { stopAll(); curKind = "fx"; try {
+  if (!audioCache[p]) audioCache[p] = new Audio(p);
+  const a = audioCache[p]; a.onended = () => curKind = null; a.currentTime = 0;
+  const pr = a.play(); if (pr && pr.catch) pr.catch(() => curKind = null);
+} catch (e) { curKind = null; } }
+const GOOD = ["sounds/good_tochno.mp3","sounds/good_umnica.mp3","sounds/good_molodec.mp3"];
+const BAD = ["sounds/bad_ne_tochno.mp3","sounds/bad_pochti.mp3"];
+function praise() {
+  // защита только от случайного двойного клика (менее 0,5 с) — похвала не пропадает
+  if (curKind === "fx") {
+    for (const k in audioCache) {
+      const a = audioCache[k];
+      if (a && !a.paused && a.currentTime < 0.5) return;
+    }
+  }
+  let i = Math.floor(Math.random()*GOOD.length); if (i === lastGood) i = (i+1)%GOOD.length; lastGood = i; fx(GOOD[i]);
+}
+function molodets() {
+  // защита только от случайного двойного клика (менее 0,5 с), а не от новой гласной:
+  // на КАЖДУЮ угаданную гласную «Молодец!» должен звучать
+  const a = audioCache["sounds/good_molodec.mp3"];
+  if (curKind === "fx" && a && !a.paused && a.currentTime < 0.5) return;
+  fx("sounds/good_molodec.mp3");
+}
+function oops() { let i = Math.floor(Math.random()*BAD.length); if (i === lastBad) i = (i+1)%BAD.length; lastBad = i; fx(BAD[i]); }
+
+/* ===== состояние ===== */
+let mode = "riddle";
+let qi = 0, score = 0, errors = 0, locked = false, tried = 0;
+let caught = 0, vowelsTotal = 0, buildIdx = 0, shuffledSyl = [];
+let seqTimers = []; // планировщик «загадка → гости → открыть ответы»
+
+function shuffle(a) { for (let i = a.length-1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]] = [a[j],a[i]]; } return a; }
+function isVowel(ch) { return VOWELS.includes(ch.toUpperCase()); }
+function cword(w) {
+  return w.split("").map(ch => `<span style="color:${isVowel(ch) ? "var(--vowel)" : "var(--cons)"}">${ch}</span>`).join("");
+}
+const G1 = [
+  { word: "МАМА", em: "👩" }, { word: "ПАПА", em: "👨" }, { word: "ПИРОГ", em: "🥧" },
+  { word: "ГОСТИ", em: "🎉" }, { word: "ЛЕТО", em: "☀️" }, { word: "ТОРТ", em: "🎂" },
+];
+const G2 = [
+  { syl: ["ПИ","РОГ"], em: "🥧" }, { syl: ["СА","ЛЮТ"], em: "🎆" },
+  { syl: ["ПО","ДА","РОК"], em: "🎁" }, { syl: ["КОН","ФЕ","ТА"], em: "🍬" },
+  { syl: ["БА","БУШ","КА"], em: "👵" },
+];
+
+function doneCount() {
+  if (mode === "g1") return 1 + qi;
+  if (mode === "g2") return 7 + qi;
+  if (mode === "tongue") return 1;
+  return 0;
+}
+function render() {
+  seqTimers.forEach(clearTimeout); seqTimers = [];
+  content.innerHTML = "";
+  if (mode === "riddle") screenRiddle();
+  else if (mode === "tongue") screenTongue();
+  else if (mode === "g1") screenG1();
+  else if (mode === "g2") screenG2();
+  else screenFinal();
+}
+function topBar(extra) {
+  const done = doneCount(), pct = Math.round(done / TOTAL * 100);
+  return `<div class="topline"><span>Выполнено: ${done} | Осталось: ${TOTAL - done}</span><span>⭐ ${score}</span></div>
+    <div class="bar"><i style="width:${pct}%"></i></div>${extra || ""}`;
+}
+function confetti() {
+  for (let i = 0; i < 10; i++) {
+    const e = document.createElement("div");
+    e.className = "confetti"; e.textContent = ["🎉","⭐","✨","🎂"][i % 4];
+    e.style.left = (10 + Math.random() * 80) + "%"; e.style.top = (30 + Math.random() * 40) + "%";
+    e.style.animationDelay = (Math.random() * .3) + "s";
+    document.body.appendChild(e); setTimeout(() => e.remove(), 1300);
+  }
+}
+
+/* ===== ЗАГАДКА ===== */
+function screenRiddle() {
+  content.innerHTML = `
+    <div class="card" style="text-align:center">
+      <div class="heroes3"><img src="${IMG.yasha}"><img src="${IMG.natasha}"><img src="${IMG.balovashka}"></div>
+      <h1>🎉 Семейный праздник</h1>
+      <div class="sub">Игра про буквы и слова · Приключения с папильоном Яшей</div>
+      <div class="dialog" style="text-align:left"><img class="avatar" src="${IMG.yasha}">
+        <div class="speech">Яша: «Слушай загадку и отгадай: кто сегодня пришёл к нам в гости?»</div></div>
+      <div style="text-align:center">
+        <button onclick="play('sounds/intro.mp3')">🔊 Ещё раз</button>
+      </div>
+      <div style="text-align:center">
+        <button onclick="riddlePick(true)">Буквы и слова 🔤</button>
+        <button onclick="riddlePick(false)">Птички 🐦</button>
+        <button onclick="riddlePick(false)">Машинки 🚗</button>
+      </div>
+      <div class="fb" id="fb"></div><div class="nextw" id="nextWrap"></div>
+    </div>`;
+  // Вступление одним файлом: загадка → «Сегодня к нам в гости пришли буквы и слова!» (17,9 с)
+  play("sounds/intro.mp3", 400);
+  locked = true; // слушаем сначала — кнопки откроются после озвучки
+  seqTimers.push(setTimeout(() => {
+    locked = false;
+    const fb = document.getElementById("fb");
+    if (fb) fb.innerHTML = '<div style="color:#8a6d3b">Кто пришёл к нам в гости? Нажми ответ! 👇</div>';
+  }, 19000));
+}
+function riddlePick(ok) {
+  if (locked) return; locked = true;
+  seqTimers.forEach(clearTimeout); seqTimers = []; // ответили — фразы больше не нужны
+  if (ok) {
+    score++; confetti(); praise();
+    document.getElementById("fb").innerHTML = '<div style="color:#2e7d32">Правильно! Это буквы и слова! ✅</div>';
+    document.getElementById("nextWrap").innerHTML = '<button onclick="mode=\'tongue\';locked=false;render()">Дальше ➡</button>';
+  } else {
+    errors++; oops();
+    document.getElementById("fb").innerHTML = '<div style="color:#c62828">Почти! Послушай загадку ещё раз и подумай!</div>';
+    setTimeout(() => { locked = false; }, 900);
+  }
+}
+
+/* ===== СКОРОГОВОРКА ===== */
+function screenTongue() {
+  content.innerHTML = topBar('<div class="phase">Скороговорка 🗣️</div>') + `
+    <div class="card">
+      <div class="dialog"><img class="avatar" src="${IMG.natasha}"><div class="speech">Наташа: «А теперь скороговорка! Слушай и повторяй, а потом — быстро-быстро!»</div></div>
+      <div class="q" style="font-size:26px">«Пётр Петру пёк пироги»</div>
+      <div style="text-align:center">
+        <button onclick="play('sounds/f03.mp3')">🔊 Послушать</button>
+        <button onclick="mode='g1';qi=0;tried=0;locked=false;render()">Дальше ➡</button>
+      </div>
+    </div>`;
+  play("sounds/f03.mp3", 400);
+}
+
+/* ===== ЭТАП 1: ПОЙМАЙ ГЛАСНЫЕ ===== */
+function screenG1() {
+  const r = G1[qi];
+  caught = 0; tried = 0;
+  vowelsTotal = r.word.split("").filter(isVowel).length;
+  const letters = r.word.split("").map((ch, i) =>
+    `<div class="tile ${isVowel(ch) ? "vow" : "cons"}" id="t${i}" data-ch="${ch}" data-v="${isVowel(ch) ? 1 : 0}" onclick="pickG1(${i}, this)">${ch}</div>`).join("");
+  content.innerHTML = topBar('<div class="phase">Этап 1 — Поймай гласные 🎤</div>') + `
+    <div class="card">
+      <div class="dialog"><img class="avatar" src="${IMG.balovashka}"><div class="speech">Баловашка: «Гласные — певуньи, они поются: а-о-у-ы-э-и! Поймай их все!»</div></div>
+      <div class="singers">${VOWELS.split("").map(v => `<span>${v}</span>`).join("")}</div>
+      <div class="emoji">${r.em}</div>
+      <div class="q">Слово «${r.word}» — нажми все гласные!</div>
+      <div class="wordrow">${letters}</div>
+      <div class="fb" id="fb">Поймано гласных: 0 из ${vowelsTotal}</div>
+      <div class="nextw" id="nextWrap"></div>
+    </div>`;
+  play("sounds/f05.mp3", 500);
+}
+function pickG1(i, el) {
+  if (locked || el.classList.contains("caught")) return;
+  if (el.dataset.v === "1") {
+    el.classList.add("caught"); caught++;
+    document.getElementById("fb").innerHTML = 'Поймано гласных: ' + caught + ' из ' + vowelsTotal;
+    if (caught === vowelsTotal) {
+      locked = true; confetti();
+      document.getElementById("fb").innerHTML = '<div style="color:#2e7d32">Все гласные пойманы! ✅ Слово: ' + cword(G1[qi].word) + '</div>';
+      document.getElementById("nextWrap").innerHTML = '<button onclick="nextG1()">Дальше ➡</button>';
+      if (qi === G1.length - 1) {
+        play("sounds/f07.mp3", 1200); // «Все гласные пойманы! Отличная работа!» — только в конце этапа
+      } else {
+        praise(); // рандомная похвала
+      }
+    } else {
+      praise(); // рандомная похвала на каждую угаданную гласную
+    }
+  } else {
+    tried++; errors++;
+    el.classList.add("bad"); oops();
+    const fb = document.getElementById("fb");
+    if (tried === 1) {
+      fb.innerHTML = '<div style="color:#c62828">Это согласная! Гласные — красные певуньи, посмотри на подсказку!</div>';
+      setTimeout(() => play("sounds/f06.mp3", 0), 1200); // после реакции — объяснение целиком
+    }
+    setTimeout(() => el.classList.remove("bad"), 900);
+  }
+}
+function nextG1() {
+  qi++; locked = false;
+  if (qi >= G1.length) { mode = "g2"; qi = 0; render(); }
+  else render();
+}
+
+/* ===== ЭТАП 2: СОБЕРИ СЛОВО ИЗ СЛОГОВ ===== */
+function screenG2() {
+  const r = G2[qi];
+  buildIdx = 0; tried = 0;
+  shuffledSyl = shuffle([...r.syl]);
+  content.innerHTML = topBar('<div class="phase">Этап 2 — Собери слово из слогов 🧩</div>') + `
+    <div class="card">
+      <div class="dialog"><img class="avatar" src="${IMG.natasha}"><div class="speech">Наташа: «Слоги перепутались! Нажимай их по порядку, чтобы получилось слово!»</div></div>
+      <div class="emoji">${r.em}</div>
+      <div class="buildline" id="build"></div>
+      <div class="wordrow" id="sylrow">
+        ${shuffledSyl.map((s, i) => `<button class="sylbtn" data-i="${i}" data-s="${s}" onclick="pickG2(${i}, this)">${cword(s)}</button>`).join("")}
+      </div>
+      <div class="fb" id="fb"></div>
+      <div class="nextw" id="nextWrap"></div>
+    </div>`;
+  play(qi === 0 ? "sounds/f08.mp3" : "sounds/f09.mp3", 400);
+}
+function pickG2(i, btn) {
+  if (locked || btn.disabled) return;
+  const r = G2[qi];
+  if (shuffledSyl[i] === r.syl[buildIdx]) {
+    btn.disabled = true; btn.classList.add("good");
+    document.getElementById("build").innerHTML += `<span>${cword(shuffledSyl[i])}</span>`;
+    buildIdx++;
+    if (buildIdx === r.syl.length) {
+      locked = true; score++; confetti();
+      document.getElementById("fb").innerHTML = '<div style="color:#2e7d32">Слово собрано: ' + cword(r.syl.join("")) + ' ✅</div>';
+      // «Слово собрано» звучит только в конце этапа — после последнего слова
+      if (qi === G2.length - 1) play("sounds/f10.mp3", 900);
+      else praise(); // промежуточные слова — рандомная похвала
+      document.getElementById("nextWrap").innerHTML = '<button onclick="nextG2()">Дальше ➡</button>';
+    }
+  } else {
+    tried++; errors++;
+    btn.classList.add("bad"); oops();
+    document.getElementById("fb").innerHTML = '<div style="color:#c62828">Не тот слог! Собери слово по порядку: с начала!</div>';
+    setTimeout(() => btn.classList.remove("bad"), 800);
+  }
+}
+function nextG2() {
+  qi++; locked = false;
+  if (qi >= G2.length) { mode = "final"; render(); }
+  else render();
+}
+
+/* ===== ФИНАЛ ===== */
+function screenFinal() {
+  const pct = Math.round(score / TOTAL * 100);
+  const stars = pct >= 100 ? 3 : pct >= 75 ? 2 : pct >= 50 ? 1 : 0;
+  content.innerHTML = `
+    <div class="card" style="text-align:center">
+      <div class="stars">${"⭐".repeat(stars) || "💛"}</div>
+      <h2>Праздник удался!</h2>
+      <div class="posl">«Гость в дом — радость в нём»</div>
+      <div class="dialog" style="text-align:left"><img class="avatar" src="${IMG.balovashka}">
+        <div class="speech">Баловашка: «${pct >= 75 ? "Спасибо, дружок! Ты поймал все гласные и собрал слова — теперь я всё знаю про буквы!" : pct >= 50 ? "Ты молодец! Ещё немного — и ты будешь читать быстрее всех!" : "Ты старался — это главное! Давай ещё разок, и всё получится!"}»</div></div>
+      <p style="font-size:19px">Верных сразу: <b>${score}</b> из ${TOTAL} · Ошибок: ${errors}</p>
+      <p style="font-size:16px;color:#a08060">${stars < 3 ? "До трёх звёзд не хватило " + (TOTAL - score) + " верных ответов" : "Гласные пойманы, слова собраны — праздник удался на славу!"}</p>
+      <button style="font-size:20px;padding:14px 30px" onclick="location.reload()">🔄 Играть снова</button>
+    </div>`;
+  play("sounds/f12.mp3", 400); // «Гость в дом — радость в нём»
+}
+render();
+</script>
+</body>
+</html>
